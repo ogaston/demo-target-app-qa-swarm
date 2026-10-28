@@ -1,22 +1,356 @@
 {
   "openapi": "3.0.3",
-  "info": {"title": "target-app", "version": "ref-v1", "description": "App de referencia del warm (U8-T04). Stock nunca negativo."},
+  "info": {
+    "title": "target-app",
+    "version": "ref-v1",
+    "description": "App de referencia del warm (U8-T04) para Agentic QA Swarm. API transaccional mínima de productos y pedidos. Invariante fundamental: el stock nunca es negativo."
+  },
+  "tags": [
+    {
+      "name": "System",
+      "description": "Endpoints de diagnóstico e información del servicio"
+    },
+    {
+      "name": "Products",
+      "description": "Gestión del catálogo de productos e inventario"
+    },
+    {
+      "name": "Orders",
+      "description": "Registro y consulta de pedidos con descuento de inventario"
+    }
+  ],
   "paths": {
-    "/health": {"get": {"summary": "Salud (incluye la base)", "responses": {"200": {"description": "ok"}, "503": {"description": "base caida"}}}},
+    "/": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Información del servicio",
+        "description": "Devuelve el identificador del servicio y versión de referencia.",
+        "responses": {
+          "200": {
+            "description": "Información del servicio",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Salud del servicio",
+        "description": "Verifica la disponibilidad general incluyendo la conexión a la base de datos.",
+        "responses": {
+          "200": {
+            "description": "Servicio saludable y base de datos lista",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Base de datos caída o no inicializada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/products": {
-      "get": {"summary": "Lista productos", "responses": {"200": {"description": "lista de productos"}}},
+      "get": {
+        "tags": ["Products"],
+        "summary": "Lista productos",
+        "description": "Devuelve todos los productos disponibles con su stock actual.",
+        "responses": {
+          "200": {
+            "description": "Lista de productos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Product"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
+        "tags": ["Products"],
         "summary": "Crea un producto",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["name", "stock"], "properties": {"name": {"type": "string"}, "stock": {"type": "integer", "minimum": 0}}}}}},
-        "responses": {"201": {"description": "creado"}, "400": {"description": "entrada invalida"}}
+        "description": "Crea un nuevo producto en el catálogo con el stock inicial especificado.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "stock"],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "cafe"
+                  },
+                  "stock": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 10
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Producto creado con éxito",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Entrada inválida o stock negativo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/orders": {
-      "get": {"summary": "Lista pedidos", "responses": {"200": {"description": "lista de pedidos"}}},
+      "get": {
+        "tags": ["Orders"],
+        "summary": "Lista pedidos",
+        "description": "Devuelve el historial de pedidos registrados.",
+        "responses": {
+          "200": {
+            "description": "Lista de pedidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Order"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
+        "tags": ["Orders"],
         "summary": "Registra un pedido y descuenta stock",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["product_id", "qty"], "properties": {"product_id": {"type": "integer", "minimum": 1}, "qty": {"type": "integer", "minimum": 1}}}}}},
-        "responses": {"201": {"description": "creado"}, "404": {"description": "producto no existe"}, "409": {"description": "stock insuficiente"}}
+        "description": "Crea un pedido por la cantidad solicitada y reduce el stock del producto de forma atómica.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["product_id", "qty"],
+                "properties": {
+                  "product_id": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1
+                  },
+                  "qty": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 2
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Pedido registrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Entrada inválida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Producto no existe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stock insuficiente (no se cumple la invariante)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Product": {
+        "type": "object",
+        "required": ["id", "name", "stock"],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "example": "cafe"
+          },
+          "stock": {
+            "type": "integer",
+            "example": 10
+          }
+        }
+      },
+      "Order": {
+        "type": "object",
+        "required": ["id", "product_id", "qty", "created_at"],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1
+          },
+          "product_id": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1
+          },
+          "qty": {
+            "type": "integer",
+            "example": 2
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-10-28T10:00:00Z"
+          }
+        }
+      },
+      "ServiceInfo": {
+        "type": "object",
+        "required": ["service", "version"],
+        "properties": {
+          "service": {
+            "type": "string",
+            "example": "target-app"
+          },
+          "version": {
+            "type": "string",
+            "example": "ref-v1"
+          }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "ok"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "insufficient_stock"
+          }
+        }
       }
     }
   }
