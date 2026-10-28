@@ -24,6 +24,9 @@ import (
 //go:embed openapi.json
 var openAPIDoc []byte
 
+//go:embed swagger.html
+var swaggerUIHTML []byte
+
 // config viene del entorno. Todo lo obligatorio falla al arrancar (fail closed).
 type config struct {
 	DatabaseURL     string
@@ -121,11 +124,12 @@ func main() {
 	_ = base.Shutdown(shutdownCtx)
 }
 
-// gate responde 503 a todo lo que depende de la base hasta que Init termine. "/" y /openapi.json son
-// estaticos y siempre responden (la sonda de readiness de warm-app usa "/").
+// gate responde 503 a todo lo que depende de la base hasta que Init termine. "/", /openapi.json y
+// /swagger son estaticos y siempre responden (la sonda de readiness de warm-app usa "/").
 func gate(st appStore, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if st.Ready() || r.URL.Path == "/" || r.URL.Path == "/openapi.json" {
+		if st.Ready() || r.URL.Path == "/" || r.URL.Path == "/openapi.json" ||
+			r.URL.Path == "/swagger" || r.URL.Path == "/swagger/" || r.URL.Path == "/docs" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -160,6 +164,17 @@ func appMux(st appStore) http.Handler {
 	mux.HandleFunc("GET /openapi.json", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(openAPIDoc)
+	})
+	mux.HandleFunc("GET /swagger", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write(swaggerUIHTML)
+	})
+	mux.HandleFunc("GET /swagger/", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write(swaggerUIHTML)
+	})
+	mux.HandleFunc("GET /docs", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/swagger", http.StatusMovedPermanently)
 	})
 	mux.HandleFunc("GET /products", func(w http.ResponseWriter, r *http.Request) {
 		ps, err := st.ListProducts(r.Context())
