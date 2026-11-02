@@ -16,4 +16,5 @@ RUN setcap cap_net_bind_service=+ep /usr/local/bin/target-app \
 USER 65532:65532
 EXPOSE 80 9090
 ENV LISTEN_ADDR=:80 BASELINE_LISTEN_ADDR=:9090
+ENV TARGET_APP_BUG=oversell
 ENTRYPOINT ["/usr/local/bin/target-app"]
