@@ -79,6 +79,7 @@ func main() {
 		log.Error("configuracion invalida", "error", err.Error())
 		os.Exit(2)
 	}
+	slog.SetDefault(log)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -104,7 +105,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	srv := &http.Server{Addr: cfg.ListenAddr, Handler: gate(st, appMux(st)), ReadHeaderTimeout: 5 * time.Second}
+	srv := &http.Server{Addr: cfg.ListenAddr, Handler: requestLog(log, gate(st, appMux(st))), ReadHeaderTimeout: 5 * time.Second}
 	base := &http.Server{Addr: cfg.BaselineAddr, Handler: baselineMux(st, tok), ReadHeaderTimeout: 5 * time.Second}
 	errc := make(chan error, 2)
 	go func() { errc <- srv.ListenAndServe() }()
@@ -122,6 +123,33 @@ func main() {
 	defer cancel()
 	_ = srv.Shutdown(shutdownCtx)
 	_ = base.Shutdown(shutdownCtx)
+}
+
+// statusRecorder captura el codigo de estado que escribe el handler.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (s *statusRecorder) WriteHeader(code int) {
+	s.status = code
+	s.ResponseWriter.WriteHeader(code)
+}
+
+// requestLog escribe una linea JSON por peticion (metodo, ruta, estado, duracion). Omite las sondas
+// del kubelet (kube-probe) para que el log de la demo muestre solo trafico real.
+func requestLog(log *slog.Logger, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.UserAgent(), "kube-probe/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		start := time.Now()
+		next.ServeHTTP(rec, r)
+		log.Info("request", "method", r.Method, "path", r.URL.Path, "status", rec.status,
+			"duration_ms", time.Since(start).Milliseconds(), "remote", r.RemoteAddr)
+	})
 }
 
 // gate responde 503 a todo lo que depende de la base hasta que Init termine. "/", /openapi.json y
@@ -198,6 +226,7 @@ func appMux(st appStore) http.Handler {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal"})
 			return
 		}
+		slog.Info("producto creado", "id", p.ID, "name", p.Name, "stock", p.Stock)
 		writeJSON(w, http.StatusCreated, p)
 	})
 	mux.HandleFunc("GET /orders", func(w http.ResponseWriter, r *http.Request) {
@@ -226,6 +255,7 @@ func appMux(st appStore) http.Handler {
 		case err != nil:
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal"})
 		default:
+			slog.Info("pedido creado", "id", o.ID, "product_id", o.ProductID, "qty", o.Qty)
 			writeJSON(w, http.StatusCreated, o)
 		}
 	})
